@@ -32,8 +32,11 @@ class flickr8000(Dataset):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
-
-        self.dictionary = dict.fromkeys(sorted(list(set(" ".join(self.dataset['caption'].values.tolist()).split()))))
+        
+        list_of_words = sorted(list(set(" ".join(self.dataset['caption'].values.tolist()).split())))
+        list_of_words.append("<START>")
+        
+        self.dictionary = dict.fromkeys(list_of_words)
         
         for i,word in enumerate(list(self.dictionary.keys())):
             one_hot_encoding = torch.zeros((1,len(self.dictionary)))
@@ -123,7 +126,9 @@ class flickr8000_subset(Dataset):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
 
-        self.dictionary = dict.fromkeys(sorted(list(set(" ".join(self.dataset['caption'].apply(" ".join).values.tolist()).split()))))
+        list_of_words = sorted(list(set(" ".join(self.dataset['caption'].apply(" ".join).values.tolist()).split())))
+        list_of_words.append("<START>")
+        self.dictionary = dict.fromkeys(list_of_words)
         
         for i,word in enumerate(list(self.dictionary.keys())):
             one_hot_encoding = torch.zeros((1,len(self.dictionary)))

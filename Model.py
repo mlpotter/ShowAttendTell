@@ -38,7 +38,7 @@ class LSTM(nn.Module):
     num_context_vec (number of context vectors) = L
     
     """
-    def __init__(self,vocabulary_size,embedding_size=100,hidden_size=1000,context_size=512,num_context_vec=14*14):
+    def __init__(self,vocabulary_size,embedding_size=512,hidden_size=512,context_size=512,attention_dim=512,num_context_vec=14*14):
         super(LSTM,self).__init__()
         
         self.embedding_size=embedding_size
@@ -46,6 +46,7 @@ class LSTM(nn.Module):
         self.hidden_size = hidden_size
         self.context_size = context_size
         self.num_context_vec = num_context_vec
+        self.attention_dim = attention_dim
         
         
         # Embedding matrices
@@ -62,7 +63,11 @@ class LSTM(nn.Module):
         print("Initialized memory state and hidden state fc layers for LSTM")
         
         # soft attention
-        self.f_att = nn.Linear(hidden_size+context_size,1)
+        #self.f_att = nn.Linear(hidden_size+context_size,1)
+        self.f_att_dec = nn.Linear(hidden_size,attention_dim)
+        self.f_att_enc = nn.Linear(context_size,attention_dim)
+        self.f_full_att = nn.Linear(attention_dim,1)
+        
         print("Initialized soft version of attention mechanism")
         
         # Beta for object focus
@@ -81,35 +86,27 @@ class LSTM(nn.Module):
         # initial hidden state and cell state
         
         # attention model biased on previous hidden state     
-        e_ti = torch.cat([self.f_att( torch.cat( (a_i[:,:,i].unsqueeze(1),hn_prev) ,dim=2) ) for i in range(self.num_context_vec)],dim=2)
-
-        alpha_ti = torch.softmax(e_ti,dim=2)
+        e_ti1 = self.f_att_enc(a_i.permute(0,2,1))
+        e_ti2 = self.f_att_dec( hn_prev )
+        att = self.f_full_att( torch.relu(e_ti1 + e_ti2) ).squeeze(2).unsqueeze(1)
+        alpha_ti = torch.softmax(att,dim=2)
         
-        # context vector
-        #print(alpha_ti.size())
-        #print(a_i.size())
+        # gate output
         beta = torch.sigmoid( self.gate_scalar(hn_prev) )
+
+        # context vector
         z_expectation = beta * torch.sum(alpha_ti*a_i,dim=2).unsqueeze(dim=1)
-        #print(z_expectation.size())
-        #print(hn_prev.size())
-        # word embedding
+       
+        #word embedding
         w_embedding = self.E(input)
-        #print(w_embedding.size())
-        lstm_input = torch.cat( (w_embedding,hn_prev,z_expectation) ,dim=2)
-        #print(lstm_input.size())
         
-        _,(hn,cn) = self.LSTM(lstm_input,(hn_prev.squeeze(1).unsqueeze(0),cn_prev.squeeze(1).unsqueeze(0)))
+        _,(hn,cn) = self.LSTM(torch.cat( (w_embedding,hn_prev,z_expectation) ,dim=2),(hn_prev.squeeze(1).unsqueeze(0),cn_prev.squeeze(1).unsqueeze(0)))
+        
         # nt
-        #print(self.E(input).size())
-        #print(self.Lh(h0).size())
-        #print(self.Lz(z_expectation).size())
         #p_yt = torch.softmax( torch.exp( self.Lo( w_embedding + self.Lh(hn.squeeze(0).unsqueeze(1)) + self.Lz(z_expectation) ) ) ,dim=2)
         p_yt = self.Lo( w_embedding + self.Lh(hn.squeeze(0).unsqueeze(1)) + self.Lz(z_expectation) )
-
-        #print(p_yt.size())
         
         return p_yt,hn.squeeze(0).unsqueeze(1),cn.squeeze(0).unsqueeze(1),alpha_ti
-        
         
     def __str__(self):
         return "Dimension information:\nm={}\nK={}\nn={}\nD={}L={}\n".format(self.embedding_dim,self.vocabulary_size,self.hidden_size,self.context_size)
@@ -123,6 +120,8 @@ class LSTM(nn.Module):
 class VGG:
     def __init__(self):
         self.vgg19 = models.vgg19(pretrained=True).features[:35]
+        for param in self.vgg19.parameters():
+            param.requires_grad=False
         
     def __call__(self,input):
         with torch.no_grad():
